@@ -3,12 +3,12 @@
     windows_subsystem = "windows"
 )]
 
-use easy_socks::{AsyncOutputMessage, ClientMessage};
-use easy_socks::{AsyncOutputMessageType, Storage};
+use easy_socks::{AsyncOutputMessage, AsyncOutputMessageType, ClientMessage, Storage};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tauri::Window;
 use tokio_tungstenite::tungstenite::Message;
 
 use tauri::{AppHandle, Manager};
@@ -23,9 +23,13 @@ fn main() {
         .manage(Storage {
             inner: Mutex::new(async_proc_input_tx),
             write: Arc::new(Mutex::new(None)),
-            read: Arc::new(Mutex::new(None)),
+            reader: Arc::new(Mutex::new(None)),
         })
-        .invoke_handler(tauri::generate_handler![connect, disconnect, send_message])
+        .invoke_handler(tauri::generate_handler![
+            connect,
+            disconnect_websocket,
+            send_message
+        ])
         .setup(|app| {
             tauri::async_runtime::spawn(async move {
                 async_process_model(async_proc_input_rx, async_proc_output_tx).await
@@ -55,8 +59,20 @@ async fn connect(url: String, state: tauri::State<'_, Storage>) -> Result<(), St
 }
 
 #[tauri::command]
-fn disconnect() {
+async fn disconnect_websocket(window: Window, state: tauri::State<'_, Storage>) -> Result<(), ()> {
     println!("going to disconnect from WS");
+
+    let mut write = state.write.lock().await;
+    *write = None;
+
+    let mut reader = state.reader.lock().await;
+    *reader = None;
+
+    window
+        .emit_all("disconnected", format!("disconnected"))
+        .unwrap();
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -92,7 +108,8 @@ async fn handle(output: AsyncOutputMessage, manager: &AppHandle) {
                 *current_write = Some(write_sink);
                 let stream = output.read_stream;
                 let emitter = manager.clone();
-                tokio::spawn(async move {
+                emitter.emit_all("connected", format!("connected")).unwrap();
+                let reader_thread = tokio::spawn(async move {
                     if let Some(reader) = stream {
                         let read_future = reader.for_each_concurrent(None, |message| {
                             let sink = &emitter;
@@ -108,6 +125,9 @@ async fn handle(output: AsyncOutputMessage, manager: &AppHandle) {
                         read_future.await;
                     }
                 });
+
+                let mut reader = state.reader.lock().await;
+                *reader = Some(reader_thread);
             }
         }
         _ => println!("We got a different message"),

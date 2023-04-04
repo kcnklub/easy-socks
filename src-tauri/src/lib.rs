@@ -1,5 +1,7 @@
+use tokio::task::JoinHandle;
+
 use futures_util::stream::{SplitSink, SplitStream};
-use futures_util::StreamExt;
+use futures_util::{Future, StreamExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::{net::TcpStream, sync::mpsc};
@@ -73,5 +75,5 @@ pub enum AsyncOutputMessageType {
 pub struct Storage {
     pub inner: Mutex<mpsc::Sender<ClientMessage>>,
     pub write: Arc<Mutex<Option<SplitSink<ClientWebSocketConnection, Message>>>>,
-    pub read: Arc<Mutex<Option<SplitStream<ClientWebSocketConnection>>>>,
+    pub reader: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
