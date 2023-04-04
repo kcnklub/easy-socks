@@ -1,12 +1,19 @@
 import { invoke } from "@tauri-apps/api";
-import { connected } from "process";
-import { useState } from "react";
+import { listen } from "@tauri-apps/api/event"
+import { useEffect, useState } from "react";
 import "./App.css";
+
+type WebSocketEvent = {
+    incoming: boolean;
+    message: string;
+}
 
 function App() {
     const [isConnected, setIsConnected] = useState(false)
     const [enteredUrl, setEnteredUrl] = useState("")
-    const [events, setEvents] = useState([] as string[])
+    const [events, setEvents] = useState([] as WebSocketEvent[])
+
+    const [message, setMessage] = useState("")
 
     const urlChangeHandler = (event: any) => {
         setEnteredUrl(event.target.value)
@@ -14,8 +21,12 @@ function App() {
 
     const connect = () => {
         console.log(enteredUrl)
-        setEvents((prevStatus: string[]) => {
-            return [...prevStatus, "Attempting to connect: ws://" + enteredUrl]
+        setEvents((prevStatus: WebSocketEvent[]) => {
+            const newEvent: WebSocketEvent = {
+                incoming: false,
+                message: "Attempting to connect: " + enteredUrl
+            }
+            return [...prevStatus, newEvent]
         })
         invoke("connect", { url: enteredUrl })
 
@@ -23,14 +34,55 @@ function App() {
     }
 
     const disconnect = () => {
-        setEvents((prevState: string[]) => {
-            return [...prevState, "Disconnected"]
+        setEvents((prevState: WebSocketEvent[]) => {
+            const newEvent: WebSocketEvent = {
+                incoming: false,
+                message: "Disconnecting"
+            }
+            return [...prevState, newEvent]
         })
         setIsConnected(false)
     }
 
     const clearEvents = () => {
         setEvents([])
+    }
+
+    const messageChangeHandler = (event: any) => {
+        setMessage(event.target.value)
+    }
+
+    const sendMessage = () => {
+        setEvents((prevState: WebSocketEvent[]) => {
+            const newEvent: WebSocketEvent = {
+                incoming: false,
+                message: message
+            }
+            return [...prevState, newEvent]
+        })
+        invoke("send_message", { message: message })
+    }
+
+    useEffect(() => {
+        const unlisten = listen("message_read", (event: any) => {
+            const message = event.payload.inner;
+            setEvents((prevState: WebSocketEvent[]) => {
+                const newEvent: WebSocketEvent = {
+                    incoming: true,
+                    message: message
+                }
+                return [...prevState, newEvent]
+            })
+        })
+
+        return () => {
+            unlisten.then(f => f())
+        }
+    }, [])
+
+    const isIncoming = (event: WebSocketEvent) => {
+
+        return event.incoming ? "incoming" : ""
     }
 
     return (
@@ -45,7 +97,12 @@ function App() {
                 }
                 <button onClick={clearEvents}>Clear Events</button>
             </div>
-            {events.map((event: string) => (<p>{event}</p>))}
+            <div>
+                <label>Message:</label>
+                <input type="text" value={message} onChange={messageChangeHandler} />
+                <button onClick={sendMessage}>Send</button>
+            </div>
+            {events.map((event: WebSocketEvent) => (<p className={`${isIncoming(event)}`}>{event.message}</p>))}
         </div>
     );
 }

@@ -19,6 +19,8 @@ serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "1.2", features = ["shell-open"] }
 tokio = { version = "1.27.0", features = ["full"] }
 tokio-tungstenite = "0.18.0"
+url = "2.3.1"
+futures-util = "0.3.28"
 
 [features]
 # by default Tauri runs in production mode
